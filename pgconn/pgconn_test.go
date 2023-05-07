@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -26,9 +27,76 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/jackc/pgx/v5/pgtype"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const pgbouncerConnStringEnvVar = "PGX_TEST_PGBOUNCER_CONN_STRING"
+
+type DeletedAt sql.NullTime
+
+type Model struct {
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	DeletedAt DeletedAt `gorm:"index"`
+}
+
+type MetaModel struct {
+	createdBy string
+	LoggableModel
+}
+
+type LoggableModel struct {
+	Disabled bool `gorm:"-" json:"-"`
+}
+
+type SomeType struct {
+	Model
+	Source string
+	MetaModel
+}
+
+func TestPgConn_Stdlib(t *testing.T) {
+	DATABASE_URL := "postgresql://gorm:pass@127.0.0.1:5432/loggable?sslmode=disable"
+	db, _ := sql.Open("pgx", DATABASE_URL)
+	sql := "SELECT * FROM public.some_types ORDER BY id ASC"
+	sql = "select url from shortened_urls where id=$1"
+	st, err := db.Prepare(sql)
+	if err != nil {
+		fmt.Println(err.Error())
+		return
+	}
+	r, _ := st.Query(1)
+	for r.Next() {
+		var st = SomeType{}
+		r.Scan(&st.ID, &st.Source, &st.CreatedAt, &st.Model.ID, &st.MetaModel.createdBy)
+		fmt.Println(st)
+	}
+	//db.Exec(`INSERT INTO "some_types" ("created_at","updated_at","deleted_at","source") VALUES ('2022-12-15 11:02:25.566','2022-12-15 11:02:25.566',NULL,'Dec 15 11:02:25') RETURNING "id"`)
+}
+
+func TestPgConn_Prepare(t *testing.T) {
+	DATABASE_URL := "postgresql://gorm:pass@127.0.0.1:5432/loggable?sslmode=disable"
+	ctx := context.Background()
+	pgConn, err := pgconn.Connect(ctx, DATABASE_URL)
+	if err != nil {
+		log.Fatalln("pgconn failed to connect:", err)
+	}
+	//result := pgConn.ExecParams(context.Background(), "SELECT * FROM public.change_logs ORDER BY id ASC", nil, nil, nil, nil)
+	//for result.NextRow() {
+	//	fmt.Println("User 123 has email:", string(result.Values()[0]))
+	//}
+	sd, _ := pgConn.Prepare(ctx, "s1", "SELECT * FROM public.change_logs ORDER BY id ASC", nil)
+	rr := pgConn.ExecPrepared(ctx, sd.Name, nil, nil, nil)
+	r := rr.Read()
+	ct := r.CommandTag
+	fmt.Println(ct.RowsAffected(), ct.String())
+	sd, _ = pgConn.Prepare(ctx, "s2", `INSERT INTO "some_types" ("created_at","updated_at","deleted_at","source") VALUES ('2022-12-15 11:02:25.566','2022-12-15 11:02:25.566',NULL,'Dec 15 11:02:25') RETURNING "id"`, nil)
+	rr = pgConn.ExecPrepared(ctx, sd.Name, nil, nil, nil)
+	r = rr.Read()
+	ct = r.CommandTag
+	fmt.Println(ct.RowsAffected(), ct.String())
+}
 
 func TestConnect(t *testing.T) {
 	tests := []struct {

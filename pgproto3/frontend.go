@@ -27,6 +27,7 @@ type Frontend struct {
 	authenticationGSS               AuthenticationGSS
 	authenticationGSSContinue       AuthenticationGSSContinue
 	authenticationSASL              AuthenticationSASL
+	authenticationRFC5802           AuthenticationRFC5802
 	authenticationSASLContinue      AuthenticationSASLContinue
 	authenticationSASLFinal         AuthenticationSASLFinal
 	backendKeyData                  BackendKeyData
@@ -56,6 +57,8 @@ type Frontend struct {
 	msgType    byte
 	partialMsg bool
 	authType   uint32
+
+	DbType int
 }
 
 // NewFrontend creates a new Frontend.
@@ -228,6 +231,7 @@ func (f *Frontend) Receive() (BackendMessage, error) {
 		if msgLength < 4 {
 			return nil, fmt.Errorf("invalid message length: %d", msgLength)
 		}
+		//fmt.Printf("msgLength %v\n", msgLength)
 
 		f.bodyLen = msgLength - 4
 		f.partialMsg = true
@@ -237,6 +241,8 @@ func (f *Frontend) Receive() (BackendMessage, error) {
 	if err != nil {
 		return nil, translateEOFtoErrUnexpectedEOF(err)
 	}
+	//encodedString := hex.EncodeToString(msgBody)
+	//fmt.Println("read buf " + encodedString)
 
 	f.partialMsg = false
 
@@ -346,7 +352,11 @@ func (f *Frontend) findAuthenticationMessageType(src []byte) (BackendMessage, er
 	case AuthTypeSSPI:
 		return nil, errors.New("AuthTypeSSPI is unimplemented")
 	case AuthTypeSASL:
-		return &f.authenticationSASL, nil
+		if f.DbType == 0 {
+			return &f.authenticationSASL, nil
+		} else {
+			return &f.authenticationRFC5802, nil
+		}
 	case AuthTypeSASLContinue:
 		return &f.authenticationSASLContinue, nil
 	case AuthTypeSASLFinal:

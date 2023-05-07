@@ -43,6 +43,8 @@ func (t *tracer) traceMessage(sender byte, encodedLen int32, msg Message) {
 		t.traceAuthenticationOk(sender, encodedLen, msg)
 	case *AuthenticationSASL:
 		t.traceAuthenticationSASL(sender, encodedLen, msg)
+	case *AuthenticationRFC5802:
+		t.traceAuthenticationRFC5802(sender, encodedLen, msg)
 	case *AuthenticationSASLContinue:
 		t.traceAuthenticationSASLContinue(sender, encodedLen, msg)
 	case *AuthenticationSASLFinal:
@@ -148,6 +150,11 @@ func (t *tracer) traceAuthenticationOk(sender byte, encodedLen int32, msg *Authe
 
 func (t *tracer) traceAuthenticationSASL(sender byte, encodedLen int32, msg *AuthenticationSASL) {
 	t.writeTrace(sender, encodedLen, "AuthenticationSASL", nil)
+}
+
+func (t *tracer) traceAuthenticationRFC5802(sender byte, encodedLen int32, msg *AuthenticationRFC5802) {
+	t.beginTrace(sender, encodedLen, "AuthenticationRFC5802")
+	t.finishTrace()
 }
 
 func (t *tracer) traceAuthenticationSASLContinue(sender byte, encodedLen int32, msg *AuthenticationSASLContinue) {

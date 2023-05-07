@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -317,12 +318,20 @@ func connect(ctx context.Context, config *Config, fallbackConfig *FallbackConfig
 	pgConn.slowWriteTimer.Stop()
 	pgConn.bgReaderStarted = make(chan struct{})
 	pgConn.frontend = config.BuildFrontend(pgConn.bgReader, pgConn.conn)
+	pgConn.frontend.DbType = config.dbType
+	traceOutput := os.Stderr
+	pgConn.frontend.Trace(traceOutput, pgproto3.TracerOptions{
+		SuppressTimestamps: true,
+		RegressMode:        false,
+	})
 
 	startupMsg := pgproto3.StartupMessage{
 		ProtocolVersion: pgproto3.ProtocolVersionNumber,
 		Parameters:      make(map[string]string),
 	}
-
+	if config.dbType == 1 {
+		startupMsg.ProtocolVersion = 196659
+	}
 	// Copy default run-time params
 	for k, v := range config.RuntimeParams {
 		startupMsg.Parameters[k] = v
@@ -374,6 +383,22 @@ func connect(ctx context.Context, config *Config, fallbackConfig *FallbackConfig
 				pgConn.conn.Close()
 				return nil, &connectError{config: config, msg: "failed SASL auth", err: err}
 			}
+		case *pgproto3.AuthenticationRFC5802:
+			if msg.PwdMethod == 0 || msg.PwdMethod == 2 {
+				fmt.Println(msg)
+				digestedPassword, err := RFC5802Algorithm(config.Password, string(msg.Rnd64[:]), string(msg.Token[:]), "", int(msg.Iterstep), "sha256")
+				if err != nil {
+					pgConn.conn.Close()
+					return nil, &connectError{config: config, msg: "failed rfc5802 auth", err: err}
+				}
+
+				err = pgConn.txPasswordMessage(digestedPassword)
+				if err != nil {
+					pgConn.conn.Close()
+					return nil, &connectError{config: config, msg: "failed to write password message", err: err}
+				}
+			}
+
 		case *pgproto3.AuthenticationGSS:
 			err = pgConn.gssAuth()
 			if err != nil {

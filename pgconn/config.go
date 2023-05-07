@@ -66,6 +66,8 @@ type Config struct {
 	OnPgError PgErrorHandler
 
 	createdByParseConfig bool // Used to enforce created by ParseConfig rule.
+
+	dbType int
 }
 
 // ParseConfigOptions contains options that control how a config is built such as GetSSLPassword.
@@ -234,7 +236,7 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 	if connString != "" {
 		var err error
 		// connString may be a database URL or a DSN
-		if strings.HasPrefix(connString, "postgres://") || strings.HasPrefix(connString, "postgresql://") {
+		if strings.HasPrefix(connString, "postgres://") || strings.HasPrefix(connString, "postgresql://") || strings.HasPrefix(connString, "opengauss://") {
 			connStringSettings, err = parseURLSettings(connString)
 			if err != nil {
 				return nil, &parseConfigError{connString: connString, msg: "failed to parse as URL", err: err}
@@ -275,6 +277,10 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		},
 	}
 
+	if settings["scheme"] == "opengauss" {
+		config.dbType = 1
+	}
+
 	if connectTimeoutSetting, present := settings["connect_timeout"]; present {
 		connectTimeout, err := parseConnectTimeoutSetting(connectTimeoutSetting)
 		if err != nil {
@@ -308,6 +314,8 @@ func ParseConfigWithOptions(connString string, options ParseConfigOptions) (*Con
 		"target_session_attrs": {},
 		"service":              {},
 		"servicefile":          {},
+		"scheme":               {},
+		"binary_parameters":    {},
 	}
 
 	// Adding kerberos configuration
@@ -454,7 +462,7 @@ func parseURLSettings(connString string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	settings["scheme"] = url.Scheme
 	if url.User != nil {
 		settings["user"] = url.User.Username()
 		if password, present := url.User.Password(); present {
